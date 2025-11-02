@@ -1,6 +1,9 @@
 import numpy as np
 
 class Hamiltonian1D:
+    """
+    Minimal require methods and energies needed for the worm algorithm
+    """
 
     def __init__(self, t : float, U : float, mu : float, n_max : int = 50):
         if  t < 0:
