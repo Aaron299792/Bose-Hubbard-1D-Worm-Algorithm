@@ -28,6 +28,7 @@ class WormConfiguration:
         self.worm_tail_site = -1
         self.worm_head_site = -1.0
 
+    # time helpers
     def _norm_time(self, time, epsilon = EPSILON):
         """
         Mapea tiempos reales al intervalo de interés [0, beta)
@@ -65,6 +66,7 @@ class WormConfiguration:
         """
         return [e['time'] for e in self.events[site]]
 
+# access of the events info
     def get_elements_in_time_range(self, site, start_time, end_time):
         """
         Indexa todos los eventos dentro de un intervalo de tiempo dado manteniendo el ordenamiento temporal.
@@ -113,6 +115,7 @@ class WormConfiguration:
 
         return times[index]
 
+# occupation
     def get_occupation_at_time(self, site, time):
         """
         Regresa la ocupación para un tiempo imaginario dado para el último evento con tiempo normalizado.
@@ -126,6 +129,7 @@ class WormConfiguration:
 
         return self.events[site][index]['occ_right']
 
+# Insert and remove events
     def insert_element(self, site, time, elem_type, occ_left, occ_right, linked_site = -1):
 
         tn = self._norm_time(time)
@@ -138,4 +142,30 @@ class WormConfiguration:
             self.events[site][index + 1]['occ_left'] = event['occ_right']
         return index
 
-    
+    def remove_element(self, site, index):
+        """
+        No return. Remueve un evento dado el índice y actualiza las ocupaciones adyacentes.
+        """
+
+        if index < 0 or index >= len(self.events[site]):
+            raise IndexError('Index out of range (remove_element)')
+
+        prev_index = index - 1
+        next_index = index + 1
+
+        if prev_index >= 0 and next_index < len(self.events[site]):
+            self.events[site][next_index]['occ_left'] = self.events[site][prev_index]['occ_right']
+            self.events[site].pop(index)
+
+# testing functions
+    def dump_site(self, site):
+        return [ e.copy for e in self.events[site] ]
+
+    def compute_local_energy(self, site, time):
+        """
+        Calculo de la energía en sitio para un tiempo y lugar en la grilla.
+        """
+        n = self.get_occupation_at_time(site, time)
+        return self.hamiltonian.onsite_energy(n)
+
+        
