@@ -206,5 +206,89 @@ def insert_worm(self):
         return True
 
 
+    def move_worm(self):
+
+        eps = 1.0e-12
+        if self.config.in_z_sector:
+            return False
+
+        self.stats['move_attempts'] += 1
+
+        site = self.config.worm_head_site
+        current_time = self.config.worm_head_time
+        event_type = TYPE_WORM_HEAD if move_head else TYPE_WORM_TAIL
+
+        prev_time = self.config.find_prev_event_time(site, current_time)
+        next_time = self.config.find_next_event_time(site, current_time)
+
+        E_before = self.config.compute_local_energy(site, current_time - eps)
+        E_after = self.config.compute_local_energy(site, current_time + eps)
+        delta_E = E_after - E_before
+
+        rate = max( eps, self.e_off + np.abs(delta_E) )
+        
+        delta = WormUtils.exponential_deviate(rate, self.rng)
+        proposed_time = current_time + delta if (self.rng.random() < 0.5) else current_time - delta
+        if proposed_time <= prev_time or proposed_time >= next_time:
+            return False
+
+        E_new_before = self.config.compute_local_energy(site, proposed_time - eps)
+        E_new_after = self.config.compute_local_energy(site, proposed_time + eps)
+
+        E_new = 0.5 * (E_new_before + E_new_after)
+        E_old = 0.5 * (E_before + E_after)
+        delta_tau = proposed_time - current_time
+        deltaS = (E_new - E_old)*delta_tau 
+
+        acceptance_ratio = 0.0 if (deltaS > 700) else np.exp(-deltaS)
+        acceptance_prob = min(1.0, acceptance_ratio)
+
+        if (acceptance_prob < self.rng.random() ):
+            return False
+
+        index = self._find_event_index(site, current_time, type_filter = event_type)
+        
+        if index is None:
+            return False
+        event = self.config.events[site][index].copy()
+        self.config.remove_element(site, index)
+        new_index = self.config.insert_element(site, proposed_time, event['type'], event['occ_left'], event['occ_right'], event['linked_site'])
+
+        if self.rng.random() < 0.5:
+            self.config.worm_head_time = self.config.events[site][new_index]['time']
+        else:
+            self.config.worm_tail_time = self.config.events[site][new_index]['time']
+
+        self.stats['move_accepts'] += 1
+        self._log(f"[Move] site = {site}; type = {'H' if move_head else 'T' }; t_old = {current_time:.6f}; t_new={proposed_time:.6f}")
+        return True
+
+    def monte_carlo_sweep(self, updates_per_sweep = 100):
+
+        for _ in range(updates_per_swepp):
+            if self.config.in_z_sector:
+                self.insert_worm()
+            else:
+                u = self.rng.random()
+                if u < self.move_prob:
+                    self.move_worm()
+                elif u < self.move_prob + self.glue_prob:
+                    self.glue_worm()
+                else:
+                    self.insert_worm()
+
+            self.stats['sweeps'] += 1
+
+    def get_acceptance_rates(self):
+        rates = {}
+        for key in ('insert', 'glue', 'move'):
+            attempts = self.stats.get(f'{key}_attempts', 0)
+            accepts = self.stats.get(f'{key}_accepts', 0)
+            rates[key] = accepts / max(1, attempts)
+
+        return rates
+ 
+
+        
 
 
