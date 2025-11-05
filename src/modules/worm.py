@@ -2,16 +2,10 @@ import numpy as np
 import bisect
 
 from configuration import WormConfiguration
+from configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_DUMMY, EPSILON
 #from utils import WormUtils
 
 # Event types 
-
-TYPE_HOP = 0
-TYPE_WORM_HEAD = 1
-TYPE_WORM_TAIL = 2
-TYPE_DUMMY = 3
-
-EPSILON = 1.0e-15
 
 class WormAlgorithm:
 
@@ -47,6 +41,10 @@ class WormAlgorithm:
                 'glue_accepts'  : 0,
                 'move_attempts' : 0,
                 'move_accepts'  : 0,
+                'insertkink_attempts' : 0,
+                'insertkink_accepts'  : 0,
+                'deletekink_attempts' : 0,
+                'deletekink_accepts'  : 0,
                 'sweeps'        : 0,
                 }
 
@@ -56,37 +54,36 @@ class WormAlgorithm:
         self.move_prob = move_prob
 
         self.verbose = verbose
-
         # helpers
 
-        def _log(self, *args, **kwargs):
-            if self.verbose:
-                print(*args, **kwargs)
+    def _log(self, *args, **kwargs):
+        if self.verbose:
+            print(*args, **kwargs)
 
-        def _find_event_index(self, site, time, eps = EPSILON, type_filter = None):
-            """
-            Encontrar el indice siguiente que coincide con time dentro de la tolerancia
-            """
-            tolerance = eps * self.beta
-            events = self.config.events[site]
-            if not events:
-                return None
+    def _find_event_index(self, site, time, eps = EPSILON, type_filter = None):
+        """
+        Encontrar el indice siguiente que coincide con time dentro de la tolerancia
+        """
+        tolerance = eps * self.beta
+        events = self.config.events[site]
+        if not events:
+            return None
 
             
-            tnorm = self.config._norm_time(time)
-            times = [e['time'] for e in events]
+        tnorm = self.config._norm_time(time)
+        times = [e['time'] for e in events]
 
-            i = bisect.bisect_left(times, tnorm)
+        i = bisect.bisect_left(times, tnorm)
 
-            for index in (i - 1, i, i + 1):
-                if 0 <= index < len(events):
-                    event = events[index]
+        for index in (i - 1, i, i + 1):
+            if 0 <= index < len(events):
+                event = events[index]
                 
-                    if self.config._time_close(even['time'], target_time):
-                        if type_filter is None or event['type'] == type_filter:
-                            return index
+                if self.config._time_close(event['time'], tnorm):
+                    if type_filter is None or event['type'] == type_filter:
+                        return index
 
-            return None
+        return None
 
     def _matrix_prod_from_occ_change(self, occ_before, occ_after):
         """
@@ -135,7 +132,7 @@ class WormAlgorithm:
         if acceptance_prob < self.rng.random():                #if the probability is less than a random number, we reject
             return False
 
-        epsilon = max(1.0e-15 * self.beta, 1.0e-15 )           #We insert the worms a infinitesimal time appart
+        epsilon = max(EPSILON * self.beta, 1.0e-15 )           #We insert the worms a infinitesimal time appart
         time_tail = time
         time_head = time + epsilon
     
@@ -153,7 +150,7 @@ class WormAlgorithm:
         self._log(f'[Insert Worm] site = {site}; times = ({time_tail:.6f}, {time_head:.6f});  occ:{occ} --> {new_occ}')
         return True
 
-    def glue_worm(self):
+    def glue_worm(self, eps = EPSILON):
         """
         Cierra el worm si los extremo están abiertos o el ordenamiento del tiempo imaginario está invertido.
         """
@@ -176,7 +173,7 @@ class WormAlgorithm:
         diff = time_head - time_tail
         if diff > 0.5 * self.beta:
             diff -= self.beta
-        elif diff <= 0.5 * self.beta
+        elif diff <= 0.5 * self.beta:
             diff += self.beta 
 
         close_enough = np.abs(diff) <= self.epsilon_time
@@ -192,8 +189,8 @@ class WormAlgorithm:
 
         ref = min(time_head, time_tail)
 
-        occ = self.config.get_occupation_at_time(site, ref - 1.0e-12)
-        new_occ = self.config.get_occupation_at_time(site, ref + 1.0e-12)
+        occ = self.config.get_occupation_at_time(site, ref - 1000*eps)
+        new_occ = self.config.get_occupation_at_time(site, ref + 1000*eps)
 
         mat_prod = self._matrix_prod_from_occ_change(occ, new_occ)
         if mat_prod <= 0.0:
@@ -312,9 +309,112 @@ class WormAlgorithm:
         self._log(f"[Move] site = {site}; type = {'H' if move_head else 'T' }; t_old = {current_time:.6f}; t_new={proposed_time:.6f}")
         return True
 
+
+    def insert_kink(self):
+        
+        if self.config.in_z_sector:
+            return False
+
+        self.stats['insertkink_attempts'] += 1
+        site, current_time, current_wpm, worm_type = 0, 0.0, 0, 0
+        
+        move_head = self.rng.random() < 0.5
+        
+        if move_head:
+            site =self.config.worm_head_site
+            current_time = self.config.worm_head_time
+            current_wpm  = self.config.worm_head_wpm
+            worm_type = TYPE_WORM_HEAD
+        else:
+            site = self.config.worm_tail_site
+            current_time = self.config.worm_tail_time
+            current_wpm  = self.config.worm_tail_wpm
+            worm_type = TYPE_WORM_TAIL
+        
+        if current_wpm != 0:
+            return False
+        
+        neighbors = self.lattice.get_neighbors(site)
+        if not neighbors:
+            return False 
+
+        neighbor_site = self.rng.choice(neighbors)
+        occ_A = self.config.get_occupation_at_time(site, current_time)  
+        occ_B = self.config.get_occupation_at_time(neighbor_site, current_time)
+        
+        final_occ_A, final_occ_B, mat_A, mat_B = 0, 0, 0, 0
+        
+        if worm_type == TYPE_WORM_HEAD:
+            final_occ_A = occ_A - 1 #particle number conservation
+            final_occ_B = occ_B + 1
+            mat_A = self.hamiltonian.bosonic_matrix_element(occ_A, final_occ_A)
+            mat_B = self.hamiltonian.bosonic_matrix_element(final_occ_B, occ_B)
+            
+        else:
+            final_occ_A = occ_A + 1
+            final_occ_B = occ_B - 1
+            mat_A = self.hamiltonian.bosonic_matrix_element(final_occ_A, occ_A)
+            mat_B = self.hamiltonian.bosonic_matrix_element(occ_B, final_occ_B)
+
+        if (final_occ_A < 0 or final_occ_A > self.n_max or
+            final_occ_B < 0 or fianl_occ_B > self.n_max):
+            return False
+
+        matrix_element_product = mat_A * mat_B
+        time_factor = self.hamiltonian.t* self.beta
+        z = len(neighbors)
+        proposal_ratio = 2.0*z
+
+        acceptance_ratio = matrix_element_product * time_factor * proposal_ratio
+        acceptance_prob = min(1., acceptance_ratio)
+
+        if acceptance_prob < self.rng.random():
+            return False
+
+        index_old = self._find_event_index(site, current_time, type_filter=worm_type)
+        if index_old is None:
+            return False
+
+        old_event = self.config.events[site][index_old].copy()
+        self.config.remove_element(site, index_old)
+
+        index_hop_A = self.config.insert_element(site, current_time, TYPE_HOP, occ_A, final_occ_A, linked_site= neighbor_site)
+        index_hop_B = self.config.insert_element(neighbor_site, current_time, TYPE_HOP, occ_B, final_occ_B, linked_site = site)
+
+        epsilon = max(EPSILON * self.beta, EPSILON)
+        
+        place_after = self.rng.random() < 0.5
+        if place_after:
+            worm_time = current_time + epsilon
+            new_wpm = 1
+        else:
+            worm_time = current_time - epsilon
+            new_wpm = -1
+
+        index_worm = self.config.insert_element(neighbor_site, worm_time, worm_type, final_occ_B, occ_B, linked_site=neighbor_site)
+
+        if move_head:
+            self.config.worm_head_site = neighbor_site
+            self.config.worm_head_time = self.config.events[neighbor_site][index_worm]['time']
+            self.config.worm_head_wpm = new_wpm
+        else:
+            self.config.worm_tail_site = neighbor_site
+            self.config.worm_tail_time = self.config.events[neighbor_site][index_worm]['time']
+
+            self.config.worm_tail_wpm = new_wpm
+
+
+        self.stats['insertkink_accepts'] += 1
+        self._log(f"[InsertKink] {'head' if move_head else 'tail'}; site {site} --> {neighbor_site}, time {current_time:.6f}")
+        return True
+
+    def delete_kin(self):
+        pass
+
+
     def monte_carlo_sweep(self, updates_per_sweep = 100):
 
-        for _ in range(updates_per_swepp):
+        for _ in range(updates_per_sweep):
             if self.config.in_z_sector:
                 self.insert_worm()
             else:
