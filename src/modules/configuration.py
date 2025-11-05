@@ -172,6 +172,10 @@ class WormConfiguration:
 # Insert and remove events
     def insert_element(self, site, time, elem_type, occ_left, occ_right, linked_site = -1):
 
+        if not (0 <= site < self.nsites):
+            raise ValueError(f'Site {site} out of range [0, {self.nsites-1}]')
+        if occ_left < 0 or occ_right < 0:
+            raise ValueError('Occupations must be positive')
         tn = self._norm_time(time)
         event = {'time': tn, 'type': int(elem_type), 'occ_left' : int(occ_left), 'occ_right' : int(occ_right), 'linked_site' : int(linked_site) }
         times = self._event_times(site)
@@ -186,16 +190,44 @@ class WormConfiguration:
         """
         No return. Remueve un evento dado el índice y actualiza las ocupaciones adyacentes.
         """
+        events = self.events[site]
+        n_events = len(events)
 
-        if index < 0 or index >= len(self.events[site]):
-            raise IndexError('Index out of range (remove_element)')
+        if index < 0 or index >= n_events:
+            raise IndexError(f'Index {index} out of range for site {site}')
 
-        prev_index = index - 1
-        next_index = index + 1
+        event_to_remove = events[index]
 
-        if prev_index >= 0 and next_index < len(self.events[site]):
-            self.events[site][next_index]['occ_left'] = self.events[site][prev_index]['occ_right']
-            self.events[site].pop(index)
+        if (event_to_remove['type'] == TYPE_WORM_DUMMY and
+            event_to_remove['time'] == self.beta and
+            n_events == 1):
+            raise ValueError('Cannot remove the fundamental dummy event at beta')
+
+        if n_events > 1:
+            if index == 0:
+                events[1]['occ_left'] = events[-1]['occ_right']
+            elif index < n_events - 1:
+                events[index + 1]['occ_left'] = events[index - 1]['occ_right']
+
+        events.pop(index)
+
+    def validate_configuration(self):
+
+        for site in range(self.nsites):
+            events = self.events[site]
+
+            if not events:
+                raise ValueError(f'Site {site} has no events')
+
+            if events[0]['occ_left'] != events[-1]['occ_right']:
+                raise ValueError(f'Site {site} has inconsistent periodic boundaty')
+
+            for i in range(len(events) - 1):
+                if events[i]['occ_right'] != events[i + 1]['occ_left']:
+                    raise ValueError(f'Site {site} event {i} has inconsistent occupation')
+
+    def get_total_events(self):
+        return sum(len(events) for events in self.events)
 
 # testing functions
     def dump_site(self, site):
