@@ -231,7 +231,7 @@ class WormConfiguration:
 
 # testing functions
     def dump_site(self, site):
-        return [ e.copy for e in self.events[site] ]
+        return [ e.copy() for e in self.events[site] ]
 
     def compute_local_energy(self, site, time):
         """
