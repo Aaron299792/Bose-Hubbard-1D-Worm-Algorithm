@@ -2,7 +2,7 @@ import numpy as np
 import bisect
 
 from configuration import WormConfiguration
-from utils import WormUtils
+#from utils import WormUtils
 
 # Event types 
 
@@ -10,6 +10,8 @@ TYPE_HOP = 0
 TYPE_WORM_HEAD = 1
 TYPE_WORM_TAIL = 2
 TYPE_DUMMY = 3
+
+EPSILON = 1.0e-15
 
 class WormAlgorithm:
 
@@ -28,7 +30,7 @@ class WormAlgorithm:
             verbose = False
             ):
 
-        self.lattece = lattice
+        self.lattice = lattice
         self.hamiltonian = hamiltonian
         self.beta = beta
         self.n_max = n_max
@@ -103,7 +105,7 @@ class WormAlgorithm:
         if not self.config.in_z_sector:
             return False
     
-        self.stats['insert_attmepts'] += 1
+        self.stats['insert_attempts'] += 1
 
         site = self.rng.integers(0, self.lattice.get_nsites()) #we choose a random site A
         time = self.rng.uniform(0.0, self.beta)                #At a random time \tau_A
@@ -132,7 +134,7 @@ class WormAlgorithm:
         if acceptance_prob < self.rng.random():                #if the probability is less than a random number, we reject
             return False
 
-        epsilon = max(1.0e-12 * self.beta, 1.0e-15 )           #We insert the worms a infinitesimal time appart
+        epsilon = max(1.0e-15 * self.beta, 1.0e-15 )           #We insert the worms a infinitesimal time appart
         time_tail = time
         time_head = time + epsilon
     
@@ -143,6 +145,8 @@ class WormAlgorithm:
         self.config.worm_tail_time = self.config.events[site][index_tail]['time']
         self.config.worm_head_site = site
         self.config.worm_head_time = self.config.events[site][index_head]['time']
+        self.config.worm_head_wpm = 1
+        self.config.worm_tail_wpm = -1
         self.config.in_z_sector = False
         self.stats['insert_accepts'] += 1
         self._log(f'[Insert Worm] site = {site}; times = ({t_tail:.6f}, {t_head:.6f});  occ:{occ} --> {new_occ}')
@@ -207,52 +211,76 @@ class WormAlgorithm:
         self.config.worm_head_time = -1.0
         self.config.worm_tail_site = -1
         self.config.worm_tail_time = -1.0
+        self.config.worm_head_wpm = 0
+        self.config.worm_tail_wpm = 0
         self.config.in_z_sector = True
         self.stats('glue_accepts') += 1
         self._log(f'[Glue] site = {site}; times = ({time_head:.6f},{time_tail:.6f}); occ: {occ} --> {occ_after}')
         return True
 
 
-    def move_worm(self):
-
-        eps = 1.0e-12
+    def move_worm(self, eps = EPSILON):
+        
+        tolerance = eps * self.beta
         if self.config.in_z_sector:           #Must be in the G sector
             return False
 
         self.stats['move_attempts'] += 1
         
-        site = self.config.worm_head_site          #we move the head
-        current_time = self.config.worm_head_time  
-        
         move_head = self.rng.random() < 0.5        #we decide with equal probability which worm we'll move
-        event_type = TYPE_WORM_HEAD if move_head else TYPE_WORM_TAIL #We either move 'head' or 'tail', realistically the moving worm is head,
-                                                                     # for simplicity we won't change the name
-
-        prev_time = self.config.find_prev_event_time(site, current_time) 
-        next_time = self.config.find_next_event_time(site, current_time) 
-
-        E_before = self.config.compute_local_energy(site, current_time - eps) #local or diagonal energy prior
-        E_after = self.config.compute_local_energy(site, current_time + eps)  #local or diagonal energy later
-        delta_E = E_after - E_before
-
-        rate = self.energy_off + np.abs(delta_E)
+        forward = self.rng.rando() < 0.5
+        site, current_time, current_wpm, event_type = 0, 0.0, 0, 0 #initialization of values 
+        if move_head:
+            site = self.config.worm_head_site
+            current_time = self.config.worm_head_time
+            current_wpm = self.config.worm_head_wpm
+            event_type = TYPE_WORM_HEAD
+        else: 
+            site = self.config.worm_tail_site
+            current_time = self.config.worm_tail_time
+            current_wpm = self.config.worm_tail_wpm
+            event_type = TYPE_WORM_TAIL
         
-        delta = self._exponential_deviate(rate)
+        if current_wpm != 0:
+            if (forward and current_wpm == 1) or (not forward and current_wpm == -1):
+                return False #We reject movements towards existing elements
         
-        forward = self.rng.random < 0.5
-        proposed_time = current_time + delta if forward else current_time - delta
-        if proposed_time <= prev_time or proposed_time >= next_time: #we reject update if the time is equal to a previous time or next time
-            return False
+        prev_time = self.config.find_prev_event_time(site, current_time - 100*eps)
+        next_time = self.config.find_next_event_time(site, current_time + 100*eps)
+        
+        tau = self.config._time_distance(prev_time, next_time)
 
-        E_new_before = self.config.compute_local_energy(site, proposed_time - eps)
-        E_new_after = self.config.compute_local_energy(site, proposed_time + eps)
+        E_prior = self.config.compute_local_energy(site, current_time - eps)
+        E_latter = self.config.compute_local_energy(site, current_time + eps)
 
-        E_new = 0.5 * (E_new_before + E_new_after)
-        E_old = 0.5 * (E_before + E_after)
-        delta_tau = proposed_time - current_time
-        deltaS = (E_new - E_old)*delta_tau 
 
-        acceptance_ratio = 0.0 if (deltaS > 700) else np.exp(-deltaS)
+        rate, r_denom, r_num, pexp = 0.0, 0.0, 0.0, 0.0 #Initialization
+        
+        if forward:
+            if E_latter > E_prior:
+                rate = self.energy_off
+                pexp = -np.log( self.rng.random() ) /rate
+                r_denom = self.energy_off if tau_intv > pexp else 1.0
+                r_num = E_latter - E_prior + self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
+            else:
+                rate = E_prior - E_latter + self.energy_off
+                pexp = -np.log( self.rng.random() ) / rate
+                r_denom = E_prior - E_latter + self.energy_off if tau > pexp else 1.0
+                r_num = self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
+        else: 
+            if E_latter > E_prior:
+                rate = E_latter + E_prior - self.energy_off
+                pexp = -np.log( self.rng.random() ) /rate
+                r_denom = E_latter + E_prior - self.energy_off if tau_intv > pexp else 1.0
+                r_num = self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
+            else:
+                rate = self.energy_off
+                pexp = -np.log( self.rng.random() ) / rate
+                r_denom = self.energy_off if tau > pexp else 1.0
+                r_num = E_prior - E_latter + self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
+        
+
+        acceptance_ratio = r_num / r_denom
         acceptance_prob = min(1.0, acceptance_ratio)
 
         if (acceptance_prob < self.rng.random() ):
