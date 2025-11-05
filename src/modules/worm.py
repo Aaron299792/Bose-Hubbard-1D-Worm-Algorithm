@@ -2,7 +2,7 @@ import numpy as np
 import bisect
 
 from configuration import WormConfiguration
-from configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_DUMMY, EPSILON
+from configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_WORM_DUMMY, EPSILON
 #from utils import WormUtils
 
 # Event types 
@@ -53,7 +53,7 @@ class WormAlgorithm:
 
         self.glue_prob = glue_prob
         self.move_prob = move_prob
-
+        self.kink_prob = kink_prob
         self.verbose = verbose
         # helpers
 
@@ -171,16 +171,8 @@ class WormAlgorithm:
         time_head = self.config._norm_time(self.config.worm_head_time)
         time_tail = self.config._norm_time(self.config.worm_tail_time)
 
-        diff = time_head - time_tail
-        if diff > 0.5 * self.beta:
-            diff -= self.beta
-        elif diff <= 0.5 * self.beta:
-            diff += self.beta 
-
-        close_enough = np.abs(diff) <= self.epsilon_time
-        crossed = np.abs(diff) > (0.5 * self.beta - self.epsilon_time)
-
-        if not (close_enough or crossed):         #Time must be the same within tolerance if not reject
+        time_diff = self.config._time_distance(time_tail, time_head)
+        if time_diff > self.epsilon_time:
             return False
 
         index_head = self._find_event_index(site, time_head, TYPE_WORM_HEAD)  
@@ -409,7 +401,7 @@ class WormAlgorithm:
         self._log(f"[InsertKink] {'head' if move_head else 'tail'}; site {site} --> {neighbor_site}, time {current_time:.6f}")
         return True
 
-    def delete_kin(self):
+    def delete_kink(self):
         if self.config.in_z_sector:
             return False
 
