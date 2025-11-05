@@ -88,13 +88,6 @@ class WormAlgorithm:
         b_dagger = self.hamiltonian.bosonic_matrix_element(occ_after, occ_before)
         return b * b_dagger
         
-    def _exponential_deviate(self, rate):
-        if rate <= 0:
-            raise ValueError("rate must be positive")
-        
-        u = self.rng.random()
-        u = max(u, 1e-16)
-        return -math.log(u) / rate
 # Insert worm
 
     def insert_worm(self):
