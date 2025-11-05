@@ -16,7 +16,7 @@ class WormConfiguration:
         self.lattice = lattice
         self.hamiltonian = hamiltonian
         self.beta = beta
-
+        
         self.nsites = lattice.get_nsites()
 
         self.events = [{'time': 0.0, 'type': 3, 'occ_left': 1, 'occ_right': 1, 'linked_site': -1}]*self.nsites #static initialization of the events
@@ -27,6 +27,8 @@ class WormConfiguration:
         self.worm_head_time = -1.0
         self.worm_tail_site = -1
         self.worm_head_site = -1.0
+        self.worm_head_wpm = 0
+        self.worm_tail_wpm = 0
 
     # time helpers
     def _norm_time(self, time, epsilon = EPSILON):
@@ -167,5 +169,3 @@ class WormConfiguration:
         """
         n = self.get_occupation_at_time(site, time)
         return self.hamiltonian.onsite_energy(n)
-
-        
