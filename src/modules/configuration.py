@@ -1,7 +1,12 @@
 import numpy as np
 import bisect
 
-EPSILON = 1.0e-12 #Tolerancia
+EPSILON = 1.0e-15 #Tolerancia
+
+TYPE_HOP = 0
+TYPE_WORM_HEAD = 1
+TYPE_WORM_TAIL = 2
+TYPE_WORM_DUMMY = 3
 
 
 class WormConfiguration:
@@ -9,7 +14,7 @@ class WormConfiguration:
     Lista de eventos por sitio en la grilla para los worldlines de tiempo continuo
     '''
 
-    def __init__(self,lattice, hamiltonian, beta, initial_occupaton = 0):
+    def __init__(self,lattice, hamiltonian, beta, initial_occupation = 0, type_event = TYPE_WORM_DUMMY):
         if beta <= 0:
             raise ValueError("beta must be positive")
 
@@ -19,9 +24,13 @@ class WormConfiguration:
         
         self.nsites = lattice.get_nsites()
 
-        self.events = [ [ {'time': 0.0, 'type' : 3, 'occ_left' : 1, 'occ_right' : 1, 'linked_site' : -1} ] for _ in range(self.nsites) ]
+        self.events = [[{'time': self.beta, 
+                         'type' : type_event, 
+                         'occ_left' : initial_occupation, 
+                         'occ_right' : initial_occupation,
+                         'linked_site' : -1} ] for _ in range(self.nsites) ]
+        
         self.in_z_sector = True
-
         self.worm_head_site = -1
         self.worm_head_time = -1.0
         self.worm_tail_site = -1
