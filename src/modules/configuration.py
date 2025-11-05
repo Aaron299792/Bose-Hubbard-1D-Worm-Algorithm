@@ -117,6 +117,36 @@ class WormConfiguration:
 
         return times[index]
 
+    def find_time_to_next_element(self, site, current_time, include_neighbors=True):
+        min_interval = self.beta
+
+        next_time = self.find_next_event_time(site, current_time)
+        interval = self._time_distance(current_time, next_time)
+        min_interval = min(min_interval, interval)
+
+        if include_neighbors:
+            for neighbor in self.lattice.get_neighbors(site):
+                next_time_neighbor = self.find_next_event_time(neighbor, current_time)
+                interval_neighbor = self._time_distance(current_time, next_time_neighbor)
+                min_interval = min(min_interval, interval_neighbor)
+
+        return min_interval
+
+
+    def find_time_to_prev_element(self, site, current_time, include_neighbors=True):
+        min_interval = self.beta
+
+        prev_time = self.find_prev_event_time(site, current_time)
+        interval = self._time_distance(prev_time, current_time)
+        min_interval = min(min_interval, interval)
+
+        if include_neighbors:
+            for neighbor in self.lattice.get_neighbors(site):
+                prev_time_neighbor = self.find_prev_event_time(neighbor, current_time)
+                interval_neighbor = self._time_distance(prev_time_neighbor, current_time)
+                min_interval = min(min_interval, interval_neighbor)
+
+        return min_interval
 # occupation
     def get_occupation_at_time(self, site, time):
         """
