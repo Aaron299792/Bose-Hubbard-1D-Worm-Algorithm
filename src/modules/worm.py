@@ -41,9 +41,9 @@ class WormAlgorithm:
         self.config = WormConfiguration(lattice, hamiltonian, beta)
         
         self.stats = {
-                'insert_attemps': 0,
+                'insert_attempts': 0,
                 'insert_accepts': 0,
-                'glue_attemps'  : 0,
+                'glue_attempts'  : 0,
                 'glue_accepts'  : 0,
                 'move_attempts' : 0,
                 'move_accepts'  : 0,
@@ -142,7 +142,7 @@ class WormAlgorithm:
         self.config.worm_tail_wpm = -1
         self.config.in_z_sector = False
         self.stats['insert_accepts'] += 1
-        self._log(f'[Insert Worm] site = {site}; times = ({t_tail:.6f}, {t_head:.6f});  occ:{occ} --> {new_occ}')
+        self._log(f'[Insert Worm] site = {site}; times = ({time_tail:.6f}, {time_head:.6f});  occ:{occ} --> {new_occ}')
         return True
 
     def glue_worm(self):
@@ -163,7 +163,7 @@ class WormAlgorithm:
         site = head_site
 
         time_head = self.config._norm_time(self.config.worm_head_time)
-        time_tail = self.config._nomr_time(self.config.worm_tail_time)
+        time_tail = self.config._norm_time(self.config.worm_tail_time)
 
         diff = time_head - time_tail
         if diff > 0.5 * self.beta:
@@ -207,7 +207,7 @@ class WormAlgorithm:
         self.config.worm_head_wpm = 0
         self.config.worm_tail_wpm = 0
         self.config.in_z_sector = True
-        self.stats('glue_accepts') += 1
+        self.stats['glue_accepts'] += 1
         self._log(f'[Glue] site = {site}; times = ({time_head:.6f},{time_tail:.6f}); occ: {occ} --> {occ_after}')
         return True
 
@@ -221,7 +221,7 @@ class WormAlgorithm:
         self.stats['move_attempts'] += 1
         
         move_head = self.rng.random() < 0.5        #we decide with equal probability which worm we'll move
-        forward = self.rng.rando() < 0.5
+        forward = self.rng.random() < 0.5
         site, current_time, current_wpm, event_type = 0, 0.0, 0, 0 #initialization of values 
         if move_head:
             site = self.config.worm_head_site
@@ -270,10 +270,13 @@ class WormAlgorithm:
                 pexp = -np.log( self.rng.random() ) / rate
                 r_denom = rate if tau > pexp else 1.0
                 r_num = E_L - E_R + self.energy_off if current_wpm == 0 else 1.0
-            proposed_time = -min(pexp, tau)
+            proposed_time = current_time - min(pexp, tau)
 
         proposed_time = self.config._norm_time(proposed_time)
-
+        #Avoids roundoff errors in exchange of a very small discretization error.
+        if pexp < tolerance or np.abs(tau - pexp) < tolerance:
+            return False
+        
         acceptance_ratio = r_num / r_denom
         acceptance_prob = min(1.0, acceptance_ratio)
 

@@ -35,7 +35,7 @@ class WormConfiguration:
         """
         Mapea tiempos reales al intervalo de interés [0, beta)
         """
-        mappped_time = time % self.beta
+        mapped_time = time % self.beta
         if mapped_time < 0:
             mapped_time += self.beta
         
@@ -98,7 +98,7 @@ class WormConfiguration:
         times = self._event_times(site)
         index = bisect.bisect_right(times, tn)
 
-        if index > len(times):
+        if index >= len(times):
             return times[0] + self.beta #condición temporal periódica.
 
         return times[index]
@@ -170,7 +170,7 @@ class WormConfiguration:
         index = bisect.bisect_left(times, tn)
         self.events[site].insert(index, event)
 
-        if idx + 1 < len(self.events[site]):
+        if index + 1 < len(self.events[site]):
             self.events[site][index + 1]['occ_left'] = event['occ_right']
         return index
 
