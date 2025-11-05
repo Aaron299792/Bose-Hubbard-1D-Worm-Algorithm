@@ -19,8 +19,9 @@ class WormAlgorithm:
             energy_off = 1.0,
             seed = None,
             epsilon_time = 1.0e-3,
+            kink_prob = 0.25,
             glue_prob = 0.4,
-            move_prob = 0.6,
+            move_prob = 0.35,
             verbose = False,
             ):
 
@@ -347,17 +348,17 @@ class WormAlgorithm:
         if worm_type == TYPE_WORM_HEAD:
             final_occ_A = occ_A - 1 #particle number conservation
             final_occ_B = occ_B + 1
-            mat_A = self.hamiltonian.bosonic_matrix_element(occ_A, final_occ_A)
-            mat_B = self.hamiltonian.bosonic_matrix_element(final_occ_B, occ_B)
+            mat_A = np.sqrt(occ_A)
+            mat_B = np.sqrt(occ_B + 1)
             
         else:
             final_occ_A = occ_A + 1
             final_occ_B = occ_B - 1
-            mat_A = self.hamiltonian.bosonic_matrix_element(final_occ_A, occ_A)
-            mat_B = self.hamiltonian.bosonic_matrix_element(occ_B, final_occ_B)
+            mat_A = np.sqrt(occ_A + 1)
+            mat_B = np.sqrt(occ_B)
 
         if (final_occ_A < 0 or final_occ_A > self.n_max or
-            final_occ_B < 0 or fianl_occ_B > self.n_max):
+            final_occ_B < 0 or final_occ_B > self.n_max):
             return False
 
         matrix_element_product = mat_A * mat_B
@@ -409,9 +410,101 @@ class WormAlgorithm:
         return True
 
     def delete_kin(self):
-        pass
+        if self.config.in_z_sector:
+            return False
 
+        self.stats['deletekink_attempts'] += 1
+        site, current_time, current_wpm, worm_type = 0, 0.0, 0, 0
+        
+        move_head = self.rng.random() < 0.5
+        
+        if move_head:
+            site =self.config.worm_head_site
+            current_time = self.config.worm_head_time
+            current_wpm  = self.config.worm_head_wpm
+            worm_type = TYPE_WORM_HEAD
+        else:
+            site = self.config.worm_tail_site
+            current_time = self.config.worm_tail_time
+            current_wpm  = self.config.worm_tail_wpm
+            worm_type = TYPE_WORM_TAIL
+        
+        if current_wpm != 0:
+            return False
+        
+        hop_index = self._find_event_index(site, current_time, TYPE_HOP)
+        if hop_index is None:
+            return False
 
+        hop_event = self.config.events[site][hop_index]
+        neighbor_site = hop_event['linked_site']
+
+        neighbor_hop_index = self._find_event_index(neighbor_site, current_time, TYPE_HOP)
+        if neighbor_hop_index is None:
+            return False
+        
+        neighbor_hop_event = self.config.events[neighbor_site][neighbor_hop_index]
+        
+        if neighbor_hop_event['linked_site'] != site:
+            return False
+
+        occ_A = hop_event['occ_left']
+        final_occ_A = hop_event['occ_right']
+        occ_B = neighbor_hop_event['occ_left']
+        final_occ_B = neighbor_hop_event['occ_right']
+
+        if worm_type == TYPE_WORM_HEAD:
+            mat_A = np.sqrt(occ_A)
+            mat_B = np.sqrt(occ_B + 1)
+        else:
+            mat_A = np.sqrt(occ_A + 1)
+            mat_B = np.sqrt(occ_B)
+        
+        matrix_element_product = mat_A * mat_B
+        time_factor = self.hamiltonian.t* self.beta
+        neighbors = self.lattice.get_neighbors(site)
+        z = len(neighbors)
+        proposal_ratio = 2.0 / float(z) 
+
+        acceptance_ratio = proposal_ratio / (matrix_element_product * time_factor)
+        acceptance_prob = min(1., acceptance_ratio)
+
+        if acceptance_prob < self.rng.random():
+            return False
+
+        self.config.remove_element(site, hop_index)
+        self.config.remove_element(neighbor_site, neighbor_hop_index)
+
+        worm_index = self._find_event_index(neighbor_site, current_time, worm_type)
+        if worm_index is None:
+            return False
+
+        self.config.remove_element(neighbor_site, worm_index)
+
+        original_site = neighbor_site if move_head else site
+        new_worm_time = current_time
+
+        if worm_type == TYPE_WORM_HEAD:
+            index_worm = self.config.insert_element(original_site, new_worm_time,
+                                                    TYPE_WORM_HEAD, final_occ_B, occ_B,
+                                                    linked_site= original_site)
+            self.config.worm_head_site = original_site
+            self.config.worm_head_time = new_worm_time
+            self.config.worm_head_wpm = 0
+
+        else:
+            index_worm = self.config.insert_element(original_site, new_worm_time,
+                                                    TYPE_WORM_TAIL, final_occ_B, occ_B,
+                                                    linked_site=original_site)
+            self.config.worm_tail_site = original_site
+            self.config.worm_tail_time = new_worm_time
+            self.config.worm_tail_wpm = 0
+
+        self.stats['deletekink_accepts'] += 1
+        self._log(f"[DeleteKink] {'head' if move_head else 'tail'}; site {neighbor_site} --> {original_site}, time {current_time:.6f}")
+        return True
+
+        
     def monte_carlo_sweep(self, updates_per_sweep = 100):
 
         for _ in range(updates_per_sweep):
@@ -423,14 +516,16 @@ class WormAlgorithm:
                     self.move_worm()
                 elif u < self.move_prob + self.glue_prob:
                     self.glue_worm()
+                elif u < self.move_prob + self.glue_prob + self.kink_prob:
+                    self.insert_kink()
                 else:
-                    self.insert_worm()
+                    self.delete_kink()
 
             self.stats['sweeps'] += 1
 
     def get_acceptance_rates(self):
         rates = {}
-        for key in ('insert', 'glue', 'move'):
+        for key in ('insert', 'glue', 'move', 'insertkink', 'deletekink'):
             attempts = self.stats.get(f'{key}_attempts', 0)
             accepts = self.stats.get(f'{key}_accepts', 0)
             rates[key] = accepts / max(1, attempts)
