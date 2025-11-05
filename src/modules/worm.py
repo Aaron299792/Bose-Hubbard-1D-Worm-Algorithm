@@ -245,40 +245,41 @@ class WormAlgorithm:
             if (forward and current_wpm == 1) or (not forward and current_wpm == -1):
                 return False #We reject movements towards existing elements
         
-        prev_time = self.config.find_prev_event_time(site, current_time - 100*eps)
-        next_time = self.config.find_next_event_time(site, current_time + 100*eps)
-        
-        tau = self.config._time_distance(prev_time, next_time)
-
-        E_prior = self.config.compute_local_energy(site, current_time - eps)
-        E_latter = self.config.compute_local_energy(site, current_time + eps)
+        E_L = self.config.compute_local_energy(site, current_time - eps)
+        E_R = self.config.compute_local_energy(site, current_time + eps)
 
 
-        rate, r_denom, r_num, pexp = 0.0, 0.0, 0.0, 0.0 #Initialization
+        rate, r_denom, r_num, pexp, proposed_time = 0.0, 0.0, 0.0, 0.0, 0.0 #Initialization
         
         if forward:
-            if E_latter > E_prior:
+            tau = self.config.find_time_to_next_element(site, current_time, include_neighbors = True)
+
+            if E_R > E_L:
                 rate = self.energy_off
                 pexp = -np.log( self.rng.random() ) /rate
-                r_denom = self.energy_off if tau_intv > pexp else 1.0
-                r_num = E_latter - E_prior + self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
+                r_denom = rate if tau > pexp else 1.0
+                r_num = E_R - E_L + self.energy_off if current_wpm == 0 else 1.0
             else:
-                rate = E_prior - E_latter + self.energy_off
+                rate = E_L - E_R + self.energy_off
                 pexp = -np.log( self.rng.random() ) / rate
-                r_denom = E_prior - E_latter + self.energy_off if tau > pexp else 1.0
-                r_num = self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
+                r_denom = rate if tau > pexp else 1.0
+                r_num = self.energy_off if current_wpm ==  0 else 1.0
+            proposed_time = current_time + min(pexp, tau)
         else: 
-            if E_latter > E_prior:
-                rate = E_latter + E_prior - self.energy_off
+            tau = self.config.find_time_to_prev_element(site,current_time, include_neighbors = True)
+            if E_R > E_L:
+                rate = E_R + E_L - self.energy_off
                 pexp = -np.log( self.rng.random() ) /rate
-                r_denom = E_latter + E_prior - self.energy_off if tau_intv > pexp else 1.0
-                r_num = self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
+                r_denom = rate if tau > pexp else 1.0
+                r_num = self.energy_off if current_wpm == 0 else 1.0
             else:
                 rate = self.energy_off
                 pexp = -np.log( self.rng.random() ) / rate
-                r_denom = self.energy_off if tau > pexp else 1.0
-                r_num = E_prior - E_latter + self.energy_off if (current_wpm == 0 or np.abs(tau - pexp) < tolerance) else 1.0
-        
+                r_denom = rate if tau > pexp else 1.0
+                r_num = E_L - E_R + self.energy_off if current_wpm == 0 else 1.0
+            proposed_time = -min(pexp, tau)
+
+        proposed_time = self.config._norm_time(proposed_time)
 
         acceptance_ratio = r_num / r_denom
         acceptance_prob = min(1.0, acceptance_ratio)
@@ -290,14 +291,18 @@ class WormAlgorithm:
         
         if index is None:
             return False
+        
         event = self.config.events[site][index].copy()
         self.config.remove_element(site, index)
         new_index = self.config.insert_element(site, proposed_time, event['type'], event['occ_left'], event['occ_right'], event['linked_site'])
-
-        if self.rng.random() < 0.5:
-            self.config.worm_head_time = self.config.events[site][new_index]['time']
+        
+        new_wpm = 0 if pexp < tau else (-1 if forward else 1)
+        if move_head:
+            self.config.worm_head_wpm = new_wpm
+            self.config.worm_head_time = proposed_time
         else:
-            self.config.worm_tail_time = self.config.events[site][new_index]['time']
+            self.config.worm_tail_wpm = new_wpm
+            self.config.worm_tail_time = proposed_time
 
         self.stats['move_accepts'] += 1
         self._log(f"[Move] site = {site}; type = {'H' if move_head else 'T' }; t_old = {current_time:.6f}; t_new={proposed_time:.6f}")
