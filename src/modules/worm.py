@@ -20,14 +20,14 @@ class WormAlgorithm:
             lattice,
             hamiltonian,
             beta,
-            n_max = 50
-            c_worm = 1.0
-            energy_off = 1.0
-            seed = None
-            epsilon_time = 1.0e-3
-            glue_prob = 0.4
-            move_prob = 0.6
-            verbose = False
+            n_max = 50,
+            c_worm = 1.0,
+            energy_off = 1.0,
+            seed = None,
+            epsilon_time = 1.0e-3,
+            glue_prob = 0.4,
+            move_prob = 0.6,
+            verbose = False,
             ):
 
         self.lattice = lattice
@@ -63,22 +63,30 @@ class WormAlgorithm:
             if self.verbose:
                 print(*args, **kwargs)
 
-        def _find_event_index(self, site, time, type_filter = None):
+        def _find_event_index(self, site, time, eps = EPSILON, type_filter = None):
             """
             Encontrar el indice siguiente que coincide con time dentro de la tolerancia
             """
-            times = [e['time'] for e in self.config.events[site]]
-            if not times:
+            tolerance = eps * self.beta
+            events = self.config.events[site]
+            if not events:
                 return None
 
+            
             tnorm = self.config._norm_time(time)
+            times = [e['time'] for e in events]
 
             i = bisect.bisect_left(times, tnorm)
 
             for index in (i - 1, i, i + 1):
-                if 0 <= index < len(times):
-                    event = self.config.events[site]
+                if 0 <= index < len(events):
+                    event = events[index]
+                
+                    if self.config._time_close(even['time'], target_time):
+                        if type_filter is None or event['type'] == type_filter:
+                            return index
 
+            return None
 
     def _matrix_prod_from_occ_change(self, occ_before, occ_after):
         """
@@ -111,7 +119,7 @@ class WormAlgorithm:
             if new_occ > self.n_max:
                 return False                                   #Occupation out of boundaries (superior bound surpassed), we reject
         else :
-            if occ = 0:                                        #Occupation out of boundaries (we can't annhilate particles if they do not exist), we reject 
+            if occ == 0:                                        #Occupation out of boundaries (we can't annhilate particles if they do not exist), we reject 
                 return False
 
             new_occ -= 1
@@ -153,7 +161,7 @@ class WormAlgorithm:
         if self.config.in_z_sector: #Reject if we are not in the G sector
             return False
 
-        self.stats['glue_attemps'] += 1
+        self.stats['glue_attempts'] += 1
 
         head_site = self.config.worm_head_site         
         tail_site = self.config.worm_tail_site
@@ -208,7 +216,7 @@ class WormAlgorithm:
         self.config.worm_tail_wpm = 0
         self.config.in_z_sector = True
         self.stats['glue_accepts'] += 1
-        self._log(f'[Glue] site = {site}; times = ({time_head:.6f},{time_tail:.6f}); occ: {occ} --> {occ_after}')
+        self._log(f'[Glue] site = {site}; times = ({time_head:.6f},{time_tail:.6f}); occ: {occ} --> {new_occ}')
         return True
 
 

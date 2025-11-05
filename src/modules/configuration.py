@@ -19,14 +19,13 @@ class WormConfiguration:
         
         self.nsites = lattice.get_nsites()
 
-        self.events = [{'time': 0.0, 'type': 3, 'occ_left': 1, 'occ_right': 1, 'linked_site': -1}]*self.nsites #static initialization of the events
-
+        self.events = [ [ {'time': 0.0, 'type' : 3, 'occ_left' : 1, 'occ_right' : 1, 'linked_site' : -1} ] for _ in range(self.nsites) ]
         self.in_z_sector = True
 
         self.worm_head_site = -1
         self.worm_head_time = -1.0
         self.worm_tail_site = -1
-        self.worm_head_site = -1.0
+        self.worm_tail_time = -1.0
         self.worm_head_wpm = 0
         self.worm_tail_wpm = 0
 
@@ -155,7 +154,7 @@ class WormConfiguration:
 
         tn = self._norm_time(time)
         times = self._event_times(site)
-        index = bisect_right(times, tn) - 1
+        index = bisect.bisect_right(times, tn) - 1
         if index < 0:
             index = len(times) - 1
 

@@ -6,7 +6,7 @@ class Lattice1D:
 
     """
     
-    def _init_(self, L):
+    def __init__(self, L):
         if L <= 0:
             raise ValueError("L must be a positive")
 
