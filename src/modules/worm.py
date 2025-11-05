@@ -20,7 +20,7 @@ class WormAlgorithm:
             beta,
             n_max = 50
             c_worm = 1.0
-            e_off = 1.0
+            energy_off = 1.0
             seed = None
             epsilon_time = 1.0e-3
             glue_prob = 0.4
@@ -33,7 +33,7 @@ class WormAlgorithm:
         self.beta = beta
         self.n_max = n_max
         self.c_worm = c_worm
-        self.e_off = e_off
+        self.energy_off = energy_off
 
         self.rng = np.random.default_rng(seed)
         self.config = WormConfiguration(lattice, hamiltonian, beta)
@@ -78,82 +78,89 @@ class WormAlgorithm:
                     event = self.config.events[site]
 
 
-def _matrix_prod_from_occ_change(self, occ_before, occ_after):
-    """
-    matrix elements product <occ_before|b_j|occ_after><occ_after| b_j^dagger | occ_before>
-    """
-    b = self.hamiltonian.bosonic_matrix_element(occ_before, occ_after)
-    b_dagger = self.hamiltonian.bosonic_matrix_element(occ_after, occ_before)
-    return b * b_dagger
+    def _matrix_prod_from_occ_change(self, occ_before, occ_after):
+        """
+        matrix elements product <occ_before|b_j|occ_after><occ_after| b_j^dagger | occ_before>
+        """
+        b = self.hamiltonian.bosonic_matrix_element(occ_before, occ_after)
+        b_dagger = self.hamiltonian.bosonic_matrix_element(occ_after, occ_before)
+        return b * b_dagger
         
+    def _exponential_deviate(self, rate):
+        if rate <= 0:
+            raise ValueError("rate must be positive")
+        
+        u = self.rng.random()
+        u = max(u, 1e-16)
+        return -math.log(u) / rate
 # Insert worm
 
-def insert_worm(self):
-    """Switching between the partition function sector and the G func sector by inserting or removing a worm pair (head + tail).
+    def insert_worm(self):
+        """Switching between the partition function sector and the G func sector by inserting or removing a worm pair (head + tail).
 
-    Can only be called form the z-sector"""
+        Can only be called form the z-sector"""
 
-    if not self.config.in_z_sector:
-        return False
-    
-    self.stats['insert_attmepts'] += 1
-
-    site = self.rng.integers(0, self.lattice.get_nsites())
-    time = self.rng.uniform(0.0, self.beta)
-    occ = self.config.get_occupation_at_time(site, time)
-    new_occ = np.copy(occ)
-
-    create_first = self.rng.random() < 0.5
-    if create_first:
-        new_occ += 1
-        if new_occ > elf.n_max:
+        if not self.config.in_z_sector:
             return False
-    else :
-        if occ = 0:
+    
+        self.stats['insert_attmepts'] += 1
+
+        site = self.rng.integers(0, self.lattice.get_nsites()) #we choose a random site A
+        time = self.rng.uniform(0.0, self.beta)                #At a random time \tau_A
+        occ = self.config.get_occupation_at_time(site, time)   #We find the occupation at A
+        new_occ = np.copy(occ)                                 #We add change the occupation later 
+
+        create_first = self.rng.random() < 0.5                 #We decide with equal probability whether we create of annihilate first
+        if create_first:
+            new_occ += 1
+            if new_occ > self.n_max:
+                return False                                   #Occupation out of boundaries (superior bound surpassed), we reject
+        else :
+            if occ = 0:                                        #Occupation out of boundaries (we can't annhilate particles if they do not exist), we reject 
+                return False
+
+            new_occ -= 1
+
+        mat_prod = self._matrix_prod_from_occ_change(occ, new_occ) #|< occ | b_A | new_occ >|^2
+    
+        if mat_prod <= 0.0:                                    #It shouldn't be less equal zero, but just in case
             return False
-        
-        new_occ -= 1
 
-    mat_prod = self._matrix_prod_from_occ_change(occ, new_occ)
+        acceptance_ratio = 2 * self.c_worm  * mat_prod         #Acceptance ratio
+        acceptance_prob = min(1.0, acceptance_ratio)           #Acceptance probability
     
-    if mat_prod <= 0.0:
-        return False
+        if acceptance_prob < self.rng.random():                #if the probability is less than a random number, we reject
+            return False
 
-    acceptance_ratio = 2 * self.c_worm  * mat_prod
-    acceptance_prob = min(1.0, acceptance_ratio)
+        epsilon = max(1.0e-12 * self.beta, 1.0e-15 )           #We insert the worms a infinitesimal time appart
+        time_tail = time
+        time_head = time + epsilon
     
-    if acceptance_prob < self.rng.random():
-        return False
+        index_tail = self.config.insert_element(site, time_tail, TYPE_WORM_TAIL, occ, new_occ, linked_site=site)
+        index_head = self.config.insert_element(site, time_head, TYPE_WORM_HEAD, new_occ, occ, linked_site=site)
 
-    epsilon = max(1.0e-12 * self.beta, 1.0e-15 )
-    t_tail = time
-    t_head = time + epsilon
-    
-    index_tail = self.config.insert_element(site, t_tail, TYPE_WORM_TAIL, occ, new_occ, linked_site=site)
-    index_head = self.config.insert_element(site, t_head, TYPE_WORM_HEAD, new_occ, occ, linked_site=site)
-
-    self.config.worm_tail_site = site
-    self.config.worm_tail_time = self.config.events[site][index_tail]['time']
-    self.config.worm_head_site = site
-    self.config.worm_head_time = self.config.events[site][index_head]['time']
-    self.config.in_z_sector = False
-    self.stats['insert_accepts'] += 1
-    self._log(f'[Insert Worm] site = {site}; times = ({t_tail:.6f}, {t_head:.6f});  occ:{occ} --> {new_occ}')
-    return True
+        self.config.worm_tail_site = site
+        self.config.worm_tail_time = self.config.events[site][index_tail]['time']
+        self.config.worm_head_site = site
+        self.config.worm_head_time = self.config.events[site][index_head]['time']
+        self.config.in_z_sector = False
+        self.stats['insert_accepts'] += 1
+        self._log(f'[Insert Worm] site = {site}; times = ({t_tail:.6f}, {t_head:.6f});  occ:{occ} --> {new_occ}')
+        return True
 
     def glue_worm(self):
         """
         Cierra el worm si los extremo están abiertos o el ordenamiento del tiempo imaginario está invertido.
         """
 
-        if self.config.in_z_sector:
+        if self.config.in_z_sector: #Reject if we are not in the G sector
             return False
 
         self.stats['glue_attemps'] += 1
 
-        head_site = self.config.worm_head_site
+        head_site = self.config.worm_head_site         
         tail_site = self.config.worm_tail_site
-        if head_site != tail_site:
+        if head_site != tail_site:            #tail and head must be in the same site
             return False
 
         site = head_site
@@ -170,10 +177,10 @@ def insert_worm(self):
         close_enough = np.abs(diff) <= self.epsilon_time
         crossed = np.abs(diff) > (0.5 * self.beta - self.epsilon_time)
 
-        if not (close_enough or crossed):
+        if not (close_enough or crossed):         #Time must be the same within tolerance if not reject
             return False
 
-        index_head = self._find_event_index(site, time_head, TYPE_WORM_HEAD)
+        index_head = self._find_event_index(site, time_head, TYPE_WORM_HEAD)  
         index_tail = self._find_event_index(site, time_tail, TYPE_WORM_TAIL)
         if index_head is None or index_tail is None:
             return False
@@ -209,27 +216,32 @@ def insert_worm(self):
     def move_worm(self):
 
         eps = 1.0e-12
-        if self.config.in_z_sector:
+        if self.config.in_z_sector:           #Must be in the G sector
             return False
 
         self.stats['move_attempts'] += 1
+        
+        site = self.config.worm_head_site          #we move the head
+        current_time = self.config.worm_head_time  
+        
+        move_head = self.rng.random() < 0.5        #we decide with equal probability which worm we'll move
+        event_type = TYPE_WORM_HEAD if move_head else TYPE_WORM_TAIL #We either move 'head' or 'tail', realistically the moving worm is head,
+                                                                     # for simplicity we won't change the name
 
-        site = self.config.worm_head_site
-        current_time = self.config.worm_head_time
-        event_type = TYPE_WORM_HEAD if move_head else TYPE_WORM_TAIL
+        prev_time = self.config.find_prev_event_time(site, current_time) 
+        next_time = self.config.find_next_event_time(site, current_time) 
 
-        prev_time = self.config.find_prev_event_time(site, current_time)
-        next_time = self.config.find_next_event_time(site, current_time)
-
-        E_before = self.config.compute_local_energy(site, current_time - eps)
-        E_after = self.config.compute_local_energy(site, current_time + eps)
+        E_before = self.config.compute_local_energy(site, current_time - eps) #local or diagonal energy prior
+        E_after = self.config.compute_local_energy(site, current_time + eps)  #local or diagonal energy later
         delta_E = E_after - E_before
 
-        rate = max( eps, self.e_off + np.abs(delta_E) )
+        rate = self.energy_off + np.abs(delta_E)
         
-        delta = WormUtils.exponential_deviate(rate, self.rng)
-        proposed_time = current_time + delta if (self.rng.random() < 0.5) else current_time - delta
-        if proposed_time <= prev_time or proposed_time >= next_time:
+        delta = self._exponential_deviate(rate)
+        
+        forward = self.rng.random < 0.5
+        proposed_time = current_time + delta if forward else current_time - delta
+        if proposed_time <= prev_time or proposed_time >= next_time: #we reject update if the time is equal to a previous time or next time
             return False
 
         E_new_before = self.config.compute_local_energy(site, proposed_time - eps)
