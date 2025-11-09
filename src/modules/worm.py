@@ -133,7 +133,7 @@ class WormAlgorithm:
         if acceptance_prob < self.rng.random():                #if the probability is less than a random number, we reject
             return False
 
-        epsilon = max(EPSILON * self.beta, 1.0e-15 )           #We insert the worms a infinitesimal time appart
+        epsilon = max(EPSILON * self.beta, EPSILON )           #We insert the worms a infinitesimal time appart
         time_tail = time
         time_head = time + epsilon
     
@@ -175,8 +175,8 @@ class WormAlgorithm:
         if time_diff > self.epsilon_time:
             return False
 
-        index_head = self._find_event_index(site, time_head, TYPE_WORM_HEAD)  
-        index_tail = self._find_event_index(site, time_tail, TYPE_WORM_TAIL)
+        index_head = self._find_event_index(site, time_head, type_filter = TYPE_WORM_HEAD)  
+        index_tail = self._find_event_index(site, time_tail, type_filter = TYPE_WORM_TAIL)
         if index_head is None or index_tail is None:
             return False
 
@@ -424,14 +424,14 @@ class WormAlgorithm:
         if current_wpm != 0:
             return False
         
-        hop_index = self._find_event_index(site, current_time, TYPE_HOP)
+        hop_index = self._find_event_index(site, current_time, type_filter=TYPE_HOP)
         if hop_index is None:
             return False
 
         hop_event = self.config.events[site][hop_index]
         neighbor_site = hop_event['linked_site']
 
-        neighbor_hop_index = self._find_event_index(neighbor_site, current_time, TYPE_HOP)
+        neighbor_hop_index = self._find_event_index(neighbor_site, current_time, type_filter=TYPE_HOP)
         if neighbor_hop_index is None:
             return False
         
@@ -467,7 +467,7 @@ class WormAlgorithm:
         self.config.remove_element(site, hop_index)
         self.config.remove_element(neighbor_site, neighbor_hop_index)
 
-        worm_index = self._find_event_index(neighbor_site, current_time, worm_type)
+        worm_index = self._find_event_index(neighbor_site, current_time, type_filter=worm_type)
         if worm_index is None:
             return False
 
@@ -513,7 +513,7 @@ class WormAlgorithm:
                 else:
                     self.delete_kink()
 
-            self.stats['sweeps'] += 1
+        self.stats['sweeps'] += 1
 
     def get_acceptance_rates(self):
         rates = {}

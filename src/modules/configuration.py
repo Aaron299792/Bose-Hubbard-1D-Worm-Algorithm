@@ -1,7 +1,7 @@
 import numpy as np
 import bisect
 
-EPSILON = 1.0e-15 #Tolerancia
+EPSILON = 1.0e-6 #Tolerancia
 
 TYPE_HOP = 0
 TYPE_WORM_HEAD = 1
@@ -68,7 +68,9 @@ class WormConfiguration:
         Determina si se cierra un worldline de manera efectiva, esto es, dentro de una tolerancia, incluso para betas muy pequeños determina si dos tiempos son
         de manera efectiva el mismo.
         """
-        return np.abs(self._norm_time(time1) - self._norm_time(time2)) <= epsilon*max(1.0, self.beta)
+        dtau = np.abs(self._norm_time(time1) - self._norm_time(time2))
+        dtau_alt = np.abs(self.beta - dtau)
+        return min(dtau, dtau_alt) <= epsilon * self.beta
 
     def _event_times(self, site):
         """
@@ -94,7 +96,7 @@ class WormConfiguration:
 
         else: 
             part1 = list( range(i, len(times) ) )
-            part2 = list( range(j, len(times) ) )
+            part2 = list( range(0, j) )
 
             return part1 + part2
 
