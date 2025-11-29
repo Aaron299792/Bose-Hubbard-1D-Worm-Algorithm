@@ -21,9 +21,9 @@ class Hamiltonian1D:
         if n < 0 or n > self.n_max:
             # the occupation value is delimited due to computational resources 
             raise ValueError("occupation out of range")
-        
+
         return 0.5 * self.U * n * (n - 1) - self.mu * n
-    
+
     def bosonic_matrix_element(self, n_from : int, n_to : int):
         """
         Matrix element for a single-site creation/annihilation operators
@@ -34,9 +34,9 @@ class Hamiltonian1D:
 
         if n_to == n_from - 1:
             # b annihilation in that site
-            return np.sqrt(n_from) 
+            return np.sqrt(n_from)
         if n_to == n_from + 1:
             # b^\dagger creates a particle in that site
             return np.sqrt(n_to)
-        
+
         return 0.0

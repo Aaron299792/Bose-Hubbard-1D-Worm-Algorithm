@@ -21,15 +21,15 @@ class WormConfiguration:
         self.lattice = lattice
         self.hamiltonian = hamiltonian
         self.beta = beta
-        
+
         self.nsites = lattice.get_nsites()
 
-        self.events = [[{'time': self.beta, 
-                         'type' : type_event, 
-                         'occ_left' : initial_occupation, 
+        self.events = [[{'time': self.beta,
+                         'type' : type_event,
+                         'occ_left' : initial_occupation,
                          'occ_right' : initial_occupation,
                          'linked_site' : -1} ] for _ in range(self.nsites) ]
-        
+
         self.in_z_sector = True
         self.worm_head_site = -1
         self.worm_head_time = -1.0
@@ -46,15 +46,15 @@ class WormConfiguration:
         mapped_time = time % self.beta
         if mapped_time < 0:
             mapped_time += self.beta
-        
+
         if mapped_time < self.beta*epsilon:
             return 0.0
-        
+
         return mapped_time
 
     def _time_distance(self, time1, time2):
         """
-        Definición de la distancia (mínima) de time1 a time2 tomando en cuenta condición temporales periódicas (Bosones) 
+        Definición de la distancia (mínima) de time1 a time2 tomando en cuenta condición temporales periódicas (Bosones)
         La función es una herramienta para calcular este valor de forma precisa y consistente.
         """
         t1n = self._norm_time(time1)
@@ -87,14 +87,14 @@ class WormConfiguration:
         start = self._norm_time(start_time)
         end = self._norm_time(end_time)
         times = self._event_times(site)
-        
+
         i = bisect.bisect_left(times, start)
         j = bisect.bisect_right(times,end)
-        
+
         if end >= start:
             return list(range(i,j))
 
-        else: 
+        else:
             part1 = list( range(i, len(times) ) )
             part2 = list( range(0, j) )
 
@@ -121,7 +121,7 @@ class WormConfiguration:
         tn = self._norm_time(time)
         times = self._event_times(site)
         index = bisect.bisect_left(times, tn) - 1
-        
+
         if index < 0:
             return times[-1] - self.beta #condiciones periódicas
 
