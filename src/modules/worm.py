@@ -5,33 +5,6 @@ import random
 from configuration import WormConfiguration
 from configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_WORM_DUMMY, EPSILON
 
-
-class SimpleRNG:
-    """Lightweight RNG wrapper with a NumPy-like interface."""
-
-    def __init__(self, seed=None):
-        self._rand = random.Random(seed)
-
-    def random(self):
-        return self._rand.random()
-
-    def uniform(self, low, high=None):
-        if high is None:
-            low, high = 0.0, float(low)
-        return self._rand.uniform(low, high)
-
-    def integers(self, low, high=None):
-        if high is None:
-            high = low
-            low = 0
-        return self._rand.randrange(low, high)
-
-    def choice(self, seq):
-        return self._rand.choice(seq)
-#from utils import WormUtils
-
-# Event types 
-
 class WormAlgorithm:
 
     def __init__(
@@ -57,7 +30,7 @@ class WormAlgorithm:
         self.c_worm = c_worm
         self.energy_off = energy_off
 
-        self.rng = SimpleRNG(seed)
+        self.rng = np.random.default_rng(seed)
         self.config = WormConfiguration(lattice, hamiltonian, beta)
 
         self.stats = {
