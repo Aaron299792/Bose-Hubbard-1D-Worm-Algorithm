@@ -156,7 +156,7 @@ class WormConfiguration:
                 min_interval = min(min_interval, interval_neighbor)
 
         return min_interval
-# occupation
+    # occupation
     def get_occupation_at_time(self, site, time):
         """
         Regresa la ocupación para un tiempo imaginario dado para el último evento con tiempo normalizado.
@@ -170,7 +170,7 @@ class WormConfiguration:
 
         return self.events[site][index]['occ_right']
 
-# Insert and remove events
+    # Insert and remove events
     def insert_element(self, site, time, elem_type, occ_left, occ_right, linked_site = -1):
 
         if not (0 <= site < self.nsites):
@@ -230,7 +230,7 @@ class WormConfiguration:
     def get_total_events(self):
         return sum(len(events) for events in self.events)
 
-# testing functions
+    # testing functions
     def dump_site(self, site):
         return [ e.copy() for e in self.events[site] ]
 
