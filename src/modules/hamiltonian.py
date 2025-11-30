@@ -1,4 +1,4 @@
-import numpy as np
+import math
 
 class Hamiltonian1D:
     """
@@ -34,9 +34,9 @@ class Hamiltonian1D:
 
         if n_to == n_from - 1:
             # b annihilation in that site
-            return np.sqrt(n_from)
+            return math.sqrt(n_from)
         if n_to == n_from + 1:
             # b^\dagger creates a particle in that site
-            return np.sqrt(n_to)
+            return math.sqrt(n_to)
 
         return 0.0

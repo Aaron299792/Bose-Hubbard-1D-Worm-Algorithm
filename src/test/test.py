@@ -1,7 +1,11 @@
-import sys 
+import sys
 import os
 
-sys.path.append(os.path.abspath("../modules"))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODULES_PATH = os.path.abspath(os.path.join(BASE_DIR, "..", "modules"))
+
+if MODULES_PATH not in sys.path:
+    sys.path.insert(0, MODULES_PATH)
 
 print("---------------------------------------------")
 print("----------Importing test validation----------")
