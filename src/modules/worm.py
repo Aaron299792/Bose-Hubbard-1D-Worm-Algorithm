@@ -1,6 +1,6 @@
 import bisect
 import math
-import random
+import numpy as np
 
 from configuration import WormConfiguration
 from configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_WORM_DUMMY, EPSILON
@@ -504,7 +504,7 @@ class WormAlgorithm:
                     self.move_worm()
                 elif u < self.move_prob + self.glue_prob:
                     self.glue_worm()
-                elif u < self.move_prob + self.glue_prob + self.kink_prob:
+                elif u < self.move_prob + self.glue_prob + self.kink_prob / 2:
                     self.insert_kink()
                 else:
                     self.delete_kink()
