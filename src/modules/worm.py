@@ -1,8 +1,33 @@
-import numpy as np
 import bisect
+import math
+import random
 
 from configuration import WormConfiguration
 from configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_WORM_DUMMY, EPSILON
+
+
+class SimpleRNG:
+    """Lightweight RNG wrapper with a NumPy-like interface."""
+
+    def __init__(self, seed=None):
+        self._rand = random.Random(seed)
+
+    def random(self):
+        return self._rand.random()
+
+    def uniform(self, low, high=None):
+        if high is None:
+            low, high = 0.0, float(low)
+        return self._rand.uniform(low, high)
+
+    def integers(self, low, high=None):
+        if high is None:
+            high = low
+            low = 0
+        return self._rand.randrange(low, high)
+
+    def choice(self, seq):
+        return self._rand.choice(seq)
 #from utils import WormUtils
 
 # Event types 
@@ -32,7 +57,7 @@ class WormAlgorithm:
         self.c_worm = c_worm
         self.energy_off = energy_off
 
-        self.rng = np.random.default_rng(seed)
+        self.rng = SimpleRNG(seed)
         self.config = WormConfiguration(lattice, hamiltonian, beta)
 
         self.stats = {
@@ -108,7 +133,7 @@ class WormAlgorithm:
         site = self.rng.integers(0, self.lattice.get_nsites()) #we choose a random site A
         time = self.rng.uniform(0.0, self.beta)                #At a random time \tau_A
         occ = self.config.get_occupation_at_time(site, time)   #We find the occupation at A
-        new_occ = np.copy(occ)                                 #We add change the occupation later 
+        new_occ = occ                                          #We add change the occupation later
 
         create_first = self.rng.random() < 0.5                 #We decide with equal probability whether we create of annihilate first
         if create_first:
@@ -245,12 +270,12 @@ class WormAlgorithm:
 
             if E_R > E_L:
                 rate = self.energy_off
-                pexp = -np.log( self.rng.random() ) /rate
+                pexp = -math.log(self.rng.random()) / rate
                 r_denom = rate if tau > pexp else 1.0
                 r_num = E_R - E_L + self.energy_off if current_wpm == 0 else 1.0
             else:
                 rate = E_L - E_R + self.energy_off
-                pexp = -np.log( self.rng.random() ) / rate
+                pexp = -math.log(self.rng.random()) / rate
                 r_denom = rate if tau > pexp else 1.0
                 r_num = self.energy_off if current_wpm ==  0 else 1.0
             proposed_time = current_time + min(pexp, tau)
@@ -258,19 +283,19 @@ class WormAlgorithm:
             tau = self.config.find_time_to_prev_element(site,current_time, include_neighbors = True)
             if E_R > E_L:
                 rate = E_R + E_L - self.energy_off
-                pexp = -np.log( self.rng.random() ) /rate
+                pexp = -math.log(self.rng.random()) / rate
                 r_denom = rate if tau > pexp else 1.0
                 r_num = self.energy_off if current_wpm == 0 else 1.0
             else:
                 rate = self.energy_off
-                pexp = -np.log( self.rng.random() ) / rate
+                pexp = -math.log(self.rng.random()) / rate
                 r_denom = rate if tau > pexp else 1.0
                 r_num = E_L - E_R + self.energy_off if current_wpm == 0 else 1.0
             proposed_time = current_time - min(pexp, tau)
 
         proposed_time = self.config._norm_time(proposed_time)
         #Avoids roundoff errors in exchange of a very small discretization error.
-        if pexp < tolerance or np.abs(tau - pexp) < tolerance:
+        if pexp < tolerance or abs(tau - pexp) < tolerance:
             return False
 
         acceptance_ratio = r_num / r_denom
@@ -338,14 +363,14 @@ class WormAlgorithm:
         if worm_type == TYPE_WORM_HEAD:
             final_occ_A = occ_A - 1 #particle number conservation
             final_occ_B = occ_B + 1
-            mat_A = np.sqrt(occ_A)
-            mat_B = np.sqrt(occ_B + 1)
+            mat_A = math.sqrt(occ_A)
+            mat_B = math.sqrt(occ_B + 1)
 
         else:
             final_occ_A = occ_A + 1
             final_occ_B = occ_B - 1
-            mat_A = np.sqrt(occ_A + 1)
-            mat_B = np.sqrt(occ_B)
+            mat_A = math.sqrt(occ_A + 1)
+            mat_B = math.sqrt(occ_B)
 
         if (final_occ_A < 0 or final_occ_A > self.n_max or
             final_occ_B < 0 or final_occ_B > self.n_max):
@@ -444,11 +469,11 @@ class WormAlgorithm:
         final_occ_B = neighbor_hop_event['occ_right']
 
         if worm_type == TYPE_WORM_HEAD:
-            mat_A = np.sqrt(occ_A)
-            mat_B = np.sqrt(occ_B + 1)
+            mat_A = math.sqrt(occ_A)
+            mat_B = math.sqrt(occ_B + 1)
         else:
-            mat_A = np.sqrt(occ_A + 1)
-            mat_B = np.sqrt(occ_B)
+            mat_A = math.sqrt(occ_A + 1)
+            mat_B = math.sqrt(occ_B)
 
         matrix_element_product = mat_A * mat_B
         time_factor = self.hamiltonian.t* self.beta

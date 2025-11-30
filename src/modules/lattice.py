@@ -1,5 +1,3 @@
-import numpy as np
-
 class Lattice1D:
     """
     """
@@ -10,11 +8,11 @@ class Lattice1D:
         self.L = int(L)
         self.nsites = self.L
 
-        sites = np.arange(self.L)
-        left = (sites - 1) % self.L
-        right = (sites + 1) % self.L
-
-        self._neighbor_table = [[ int(left[i]), int(right[i]) ] for i in range(self.L)]
+        self._neighbor_table = []
+        for site in range(self.L):
+            left = (site - 1) % self.L
+            right = (site + 1) % self.L
+            self._neighbor_table.append([left, right])
 
     def get_nsites(self):
         return self.nsites
