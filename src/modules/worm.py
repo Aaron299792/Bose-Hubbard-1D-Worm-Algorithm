@@ -474,7 +474,7 @@ class WormAlgorithm:
             mat_B = math.sqrt(occ_B)  # b|n> = √n|n-1>
         else:
             # Invalid transition
-            return False
+            return self.pass_interaction(move_head=move_head)
 
         matrix_element_product = mat_A * mat_B
         time_factor = self.hamiltonian.t * self.beta
@@ -527,41 +527,70 @@ class WormAlgorithm:
             self.config.worm_tail_site = original_site
             self.config.worm_tail_time = current_time
             self.config.worm_tail_wpm = 0
-        """
-        # Find and remove the worm event at neighbor site
-        worm_index = self._find_event_index(neighbor_site, current_time,
-                                       type_filter=worm_type)
-        if worm_index is None:
-            worm_index = self._find_event_index(neighbor_site, current_time,
-                                           eps=10*EPSILON, type_filter=worm_type)
-            if worm_index is None:
-                return False
-
-        self.config.remove_element(neighbor_site, worm_index)
-
-        # Reinsert the worm at the original site
-        # Determine which site gets the worm back based on worm type
-        if worm_type == TYPE_WORM_HEAD:
-            # Worm was at neighbor site, move back to original site
-            original_site = site
-            # Occupations: we go from final_occ_B back to occ_B
-            index_worm = self.config.insert_element(original_site, current_time,
-                                               TYPE_WORM_HEAD, final_occ_B, occ_B,
-                                               linked_site=original_site)
-            self.config.worm_head_site = original_site
-            self.config.worm_head_time = current_time
-            self.config.worm_head_wpm = 0
-        else:  # TYPE_WORM_TAIL
-            original_site = site
-            index_worm = self.config.insert_element(original_site, current_time,
-                                               TYPE_WORM_TAIL, final_occ_B, occ_B,
-                                               linked_site=original_site)
-            self.config.worm_tail_site = original_site
-            self.config.worm_tail_time = current_time
             self.config.worm_tail_wpm = 0
-        """
         self.stats['deletekink_accepts'] += 1
         self._log(f"[DeleteKink] {'head' if move_head else 'tail'}; site {neighbor_site} --> {original_site}, time {current_time:.6f}")
+        return True
+
+    def pass_interaction(self, move_head=True):
+        """
+        PASSINTERACTION:
+        When a hopping term at the worm time cannot be deleted (occupation
+        pattern incompatible with a simple creation/annihilation pair),
+        we move the worm endpoint across the hop without modifying the
+        configuration. This is accepted with probability 1.
+
+        This implements the "pass interaction" update in the Pollet algorithm.
+        """
+        # Only meaningful in worm sector
+        if self.config.in_z_sector:
+            return False
+
+        # Choose which end of the worm we are moving
+        if move_head:
+            site = self.config.worm_head_site
+            current_time = self.config.worm_head_time
+            worm_type = TYPE_WORM_HEAD
+        else:
+            site = self.config.worm_tail_site
+            current_time = self.config.worm_tail_time
+            worm_type = TYPE_WORM_TAIL
+
+        # No worm present → nothing to do
+        if site < 0:
+            return False
+
+        # Find the hop event at this site and time
+        hop_index = self._find_event_index(site, current_time,
+                                           type_filter=TYPE_HOP)
+        if hop_index is None:
+            # Try with slightly relaxed tolerance
+            hop_index = self._find_event_index(site, current_time,
+                                               eps=10 * EPSILON,
+                                               type_filter=TYPE_HOP)
+            if hop_index is None:
+                return False
+
+        hop_event = self.config.events[site][hop_index]
+        neighbor_site = hop_event['linked_site']
+
+        # Sanity check on neighbor index
+        if neighbor_site < 0 or neighbor_site >= self.lattice.get_nsites():
+            return False
+
+        # Move the worm endpoint across the interaction to the neighbor site
+        if worm_type == TYPE_WORM_HEAD:
+            self.config.worm_head_site = neighbor_site
+            self.config.worm_head_time = current_time
+            # Keep worm_head_wpm as-is; it only encodes infinitesimal ordering
+        else:  # TYPE_WORM_TAIL
+            self.config.worm_tail_site = neighbor_site
+            self.config.worm_tail_time = current_time
+
+        # No changes to events themselves: this is just a relabeling of
+        # where the worm is with respect to the existing hop.
+        self._log(f"[PassInteraction] {'head' if move_head else 'tail'} "
+                  f"moved across hop {site}->{neighbor_site} at t={current_time:.6f}")
         return True
 
     def monte_carlo_sweep(self, updates_per_sweep = 100):
