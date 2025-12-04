@@ -9,15 +9,15 @@ from modules import Hamiltonian1D, Lattice1D, WormConfiguration, WormAlgorithm
 #Params
 L = 5
 nmax = 5
-t = 0.01
+t = 1.0
 U = 0.0
 mu = 0.0
 
-beta = 10.0
+beta = 100.0
 #objects
 latt = Lattice1D(L)
 ham = Hamiltonian1D(t, U, mu, nmax)
-w = WormAlgorithm(latt,ham, beta, n_max = 5, c_worm = 2.0, energy_off = 1.0, seed = 11, epsilon_time = 1.0e-3, kink_prob = 0.4, glue_prob = 0.3, move_prob = 0.3)
+w = WormAlgorithm(latt,ham, beta, n_max = 5, c_worm = 2.0, energy_off = 1.0, seed = 11, epsilon_time = 1.0e-8, kink_prob = 0.4, glue_prob = 0.3, move_prob = 0.3)
 
 sweeps = 10000
 
@@ -30,5 +30,5 @@ rates = w.get_acceptance_rates()
 print('------------------')
 print('Test of simulation')
 print('------------------\n')
-print(f'Parameters: \n L = {L} \n t = {t} \n U = {U} \n mu = {mu} \n nmax = {nmax} \n beta = {beta} \n site of test = {3} \n')
-print(f'Statistics: \n Insert {rates['insert']} \n Glue {rates['glue']} \n Move {rates['move']} \n InsertKink {rates['insertkink']} \n DeleteKink{rates['deletekink']}')
+print(f'Parameters: \n L = {L} \n t = {t} \n U = {U} \n mu = {mu} \n nmax = {nmax} \n beta = {beta} \n epsilon_time = {1.0e-8}')
+print(f'Statistics: \n Insert {rates['insert']} \n Glue {rates['glue']} \n Move {rates['move']} \n InsertKink {rates['insertkink']} \n DeleteKink {rates['deletekink']}')
