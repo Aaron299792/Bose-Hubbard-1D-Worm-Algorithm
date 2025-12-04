@@ -1,6 +1,6 @@
 import bisect
 
-EPSILON = 1.0e-6 #Tolerancia
+EPSILON = 1.0e-10 #Tolerancia
 
 TYPE_HOP = 0
 TYPE_WORM_HEAD = 1
