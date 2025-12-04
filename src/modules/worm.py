@@ -2,8 +2,8 @@ import bisect
 import math
 import numpy as np
 
-from configuration import WormConfiguration
-from configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_WORM_DUMMY, EPSILON
+from .configuration import WormConfiguration
+from .configuration import TYPE_HOP, TYPE_WORM_TAIL, TYPE_WORM_HEAD, TYPE_WORM_DUMMY, EPSILON
 
 class WormAlgorithm:
 
@@ -12,14 +12,14 @@ class WormAlgorithm:
             lattice,
             hamiltonian,
             beta,
-            n_max = 50,
-            c_worm = 1.0,
+            n_max = 5,
+            c_worm = 2.0,
             energy_off = 1.0,
             seed = None,
             epsilon_time = 1.0e-3,
-            kink_prob = 0.25,
-            glue_prob = 0.4,
-            move_prob = 0.35,
+            kink_prob = 0.4,
+            glue_prob = 0.3,
+            move_prob = 0.3,
             verbose = False,
             ):
 
@@ -114,7 +114,7 @@ class WormAlgorithm:
             if new_occ > self.n_max:
                 return False                                   #Occupation out of boundaries (superior bound surpassed), we reject
         else :
-            if occ == 0:                                        #Occupation out of boundaries (we can't annhilate particles if they do not exist), we reject 
+            if occ == 0:                                        #Occupation out of boundaries (we can't annhilate particles if they do not exist), we reject
                 return False
 
             new_occ -= 1
@@ -148,40 +148,40 @@ class WormAlgorithm:
         return True
 
     def glue_worm(self, eps = EPSILON):
-        """
-        Cierra el worm si los extremo están abiertos o el ordenamiento del tiempo imaginario está invertido.
-        """
-
-        if self.config.in_z_sector: #Reject if we are not in the G sector
+        if self.config.in_z_sector:
             return False
 
         self.stats['glue_attempts'] += 1
 
         head_site = self.config.worm_head_site
         tail_site = self.config.worm_tail_site
-        if head_site != tail_site:            #tail and head must be in the same site
+
+        # Check if head and tail are on the same site
+        if head_site != tail_site:
             return False
 
         site = head_site
-
         time_head = self.config._norm_time(self.config.worm_head_time)
         time_tail = self.config._norm_time(self.config.worm_tail_time)
 
-        time_diff = self.config._time_distance(time_tail, time_head)
-        if time_diff > self.epsilon_time:
-            return False
+        # Find indices of head and tail events
+        index_head = self._find_event_index(site, time_head, type_filter=TYPE_WORM_HEAD)
+        index_tail = self._find_event_index(site, time_tail, type_filter=TYPE_WORM_TAIL)
 
-        index_head = self._find_event_index(site, time_head, type_filter = TYPE_WORM_HEAD)
-        index_tail = self._find_event_index(site, time_tail, type_filter = TYPE_WORM_TAIL)
         if index_head is None or index_tail is None:
             return False
 
-        ref = min(time_head, time_tail)
+        # Get events directly
+        head_event = self.config.events[site][index_head]
+        tail_event = self.config.events[site][index_tail]
 
-        occ = self.config.get_occupation_at_time(site, ref - 1000*eps)
-        new_occ = self.config.get_occupation_at_time(site, ref + 1000*eps)
+        # Calculate matrix element product using events
+        # Head event: occ_left -> occ_right (reverts tail change)
+        # Tail event: occ_left -> occ_right (initial change)
+        occ_before = tail_event['occ_left']
+        occ_after = tail_event['occ_right']
 
-        mat_prod = self._matrix_prod_from_occ_change(occ, new_occ)
+        mat_prod = self._matrix_prod_from_occ_change(occ_before, occ_after)
         if mat_prod <= 0.0:
             return False
 
@@ -191,9 +191,11 @@ class WormAlgorithm:
         if acceptance_prob < self.rng.random():
             return False
 
+        # Remove events (in reverse order to preserve indices)
         for index in sorted((index_head, index_tail), reverse=True):
             self.config.remove_element(site, index)
 
+        # Reset worm state
         self.config.worm_head_site = -1
         self.config.worm_head_time = -1.0
         self.config.worm_tail_site = -1
@@ -201,10 +203,10 @@ class WormAlgorithm:
         self.config.worm_head_wpm = 0
         self.config.worm_tail_wpm = 0
         self.config.in_z_sector = True
-        self.stats['glue_accepts'] += 1
-        self._log(f'[Glue] site = {site}; times = ({time_head:.6f},{time_tail:.6f}); occ: {occ} --> {new_occ}')
-        return True
 
+        self.stats['glue_accepts'] += 1
+        self._log(f'[Glue] site = {site}; occ: {occ_before} --> {occ_after}')
+        return True
 
     def move_worm(self, eps = EPSILON):
 
@@ -216,7 +218,7 @@ class WormAlgorithm:
 
         move_head = self.rng.random() < 0.5        #we decide with equal probability which worm we'll move
         forward = self.rng.random() < 0.5
-        site, current_time, current_wpm, event_type = 0, 0.0, 0, 0 #initialization of values 
+        site, current_time, current_wpm, event_type = 0, 0.0, 0, 0 #initialization of values
         if move_head:
             site = self.config.worm_head_site
             current_time = self.config.worm_head_time
@@ -252,7 +254,7 @@ class WormAlgorithm:
                 r_denom = rate if tau > pexp else 1.0
                 r_num = self.energy_off if current_wpm ==  0 else 1.0
             proposed_time = current_time + min(pexp, tau)
-        else: 
+        else:
             tau = self.config.find_time_to_prev_element(site,current_time, include_neighbors = True)
             if E_R > E_L:
                 rate = E_R + E_L - self.energy_off
@@ -300,101 +302,110 @@ class WormAlgorithm:
 
 
     def insert_kink(self):
-
         if self.config.in_z_sector:
             return False
 
         self.stats['insertkink_attempts'] += 1
-        site, current_time, current_wpm, worm_type = 0, 0.0, 0, 0
 
-        move_head = self.rng.random() < 0.5
-
-        if move_head:
-            site =self.config.worm_head_site
+        # Choose which worm end to move
+        if self.rng.random() < 0.5:
+            site = self.config.worm_head_site
             current_time = self.config.worm_head_time
-            current_wpm  = self.config.worm_head_wpm
             worm_type = TYPE_WORM_HEAD
+            is_head = True
         else:
             site = self.config.worm_tail_site
             current_time = self.config.worm_tail_time
-            current_wpm  = self.config.worm_tail_wpm
             worm_type = TYPE_WORM_TAIL
+            is_head = False
 
-        if current_wpm != 0:
-            return False
-
+        # Get neighbors
         neighbors = self.lattice.get_neighbors(site)
         if not neighbors:
             return False
 
+        # Choose random neighbor
         neighbor_site = self.rng.choice(neighbors)
-        occ_A = self.config.get_occupation_at_time(site, current_time)
-        occ_B = self.config.get_occupation_at_time(neighbor_site, current_time)
 
-        final_occ_A, final_occ_B, mat_A, mat_B = 0, 0, 0, 0
+        # Get occupations at current time
+        occ_site = self.config.get_occupation_at_time(site, current_time)
+        occ_neighbor = self.config.get_occupation_at_time(neighbor_site, current_time)
 
-        if worm_type == TYPE_WORM_HEAD:
-            final_occ_A = occ_A - 1 #particle number conservation
-            final_occ_B = occ_B + 1
-            mat_A = math.sqrt(occ_A)
-            mat_B = math.sqrt(occ_B + 1)
-
+        # Determine the transition
+        if is_head:
+            # Head represents annihilation: destroy at site, create at neighbor
+            if occ_site < 1:
+                return False  # Cannot annihilate if no particle
+            new_occ_site = occ_site - 1
+            new_occ_neighbor = occ_neighbor + 1
+            mat_site = math.sqrt(occ_site)  # b|n> = √n|n-1>
+            mat_neighbor = math.sqrt(occ_neighbor + 1)  # b†|n> = √(n+1)|n+1>
         else:
-            final_occ_A = occ_A + 1
-            final_occ_B = occ_B - 1
-            mat_A = math.sqrt(occ_A + 1)
-            mat_B = math.sqrt(occ_B)
+            # Tail represents creation: create at site, destroy at neighbor
+            if occ_neighbor < 1:
+                return False  # Cannot annihilate if no particle at neighbor
+            new_occ_site = occ_site + 1
+            new_occ_neighbor = occ_neighbor - 1
+            mat_site = math.sqrt(occ_site + 1)  # b†|n> = √(n+1)|n+1>
+            mat_neighbor = math.sqrt(occ_neighbor)  # b|n> = √n|n-1>
 
-        if (final_occ_A < 0 or final_occ_A > self.n_max or
-            final_occ_B < 0 or final_occ_B > self.n_max):
+        # Check bounds
+        if (new_occ_site < 0 or new_occ_site > self.n_max or
+            new_occ_neighbor < 0 or new_occ_neighbor > self.n_max):
             return False
 
-        matrix_element_product = mat_A * mat_B
-        time_factor = self.hamiltonian.t* self.beta
+        # Acceptance ratio
+        matrix_element = mat_site * mat_neighbor
         z = len(neighbors)
-        proposal_ratio = 2.0*z
+        # Probability to choose this specific move: 1/(2*z)
+        # (1/2 for head/tail, 1/z for neighbor choice)
+        proposal_prob_forward = 1.0 / (2.0 * z)
 
-        acceptance_ratio = matrix_element_product * time_factor * proposal_ratio
-        acceptance_prob = min(1., acceptance_ratio)
+        # For reverse move (delete_kink), probability is 1 (deterministic if we're at the kink)
+        proposal_prob_reverse = 1.0
+
+        proposal_ratio = proposal_prob_reverse / proposal_prob_forward
+
+        # Acceptance probability
+        acceptance_ratio = (matrix_element * self.hamiltonian.t * self.beta *
+                       proposal_ratio)
+        acceptance_prob = min(1.0, acceptance_ratio)
 
         if acceptance_prob < self.rng.random():
             return False
 
-        index_old = self._find_event_index(site, current_time, type_filter=worm_type)
-        if index_old is None:
+        # Remove the old worm event
+        worm_index = self._find_event_index(site, current_time, type_filter=worm_type)
+        if worm_index is None:
             return False
 
-        old_event = self.config.events[site][index_old].copy()
-        self.config.remove_element(site, index_old)
+        self.config.remove_element(site, worm_index)
 
-        index_hop_A = self.config.insert_element(site, current_time, TYPE_HOP, occ_A, final_occ_A, linked_site= neighbor_site)
-        index_hop_B = self.config.insert_element(neighbor_site, current_time, TYPE_HOP, occ_B, final_occ_B, linked_site = site)
+        # Insert hopping events at the same time
+        self.config.insert_element(site, current_time, TYPE_HOP,
+                              occ_site, new_occ_site,
+                              linked_site=neighbor_site)
+        self.config.insert_element(neighbor_site, current_time, TYPE_HOP,
+                              occ_neighbor, new_occ_neighbor,
+                              linked_site=site)
 
-        epsilon = max(EPSILON * self.beta, EPSILON)
+        # Insert worm at neighbor site at SAME time (not shifted)
+        # This is key: the worm should be at the same imaginary time as the hop
+        index_worm = self.config.insert_element(neighbor_site, current_time,
+                                           worm_type, new_occ_neighbor, occ_neighbor,
+                                           linked_site=neighbor_site)
 
-        place_after = self.rng.random() < 0.5
-        if place_after:
-            worm_time = current_time + epsilon
-            new_wpm = 1
-        else:
-            worm_time = current_time - epsilon
-            new_wpm = -1
-
-        index_worm = self.config.insert_element(neighbor_site, worm_time, worm_type, final_occ_B, occ_B, linked_site=neighbor_site)
-
-        if move_head:
+        # Update worm position
+        if is_head:
             self.config.worm_head_site = neighbor_site
-            self.config.worm_head_time = self.config.events[neighbor_site][index_worm]['time']
-            self.config.worm_head_wpm = new_wpm
+            self.config.worm_head_time = current_time
+            self.config.worm_head_wpm = 0  # Reset wpm since worm is now at hop event
         else:
             self.config.worm_tail_site = neighbor_site
-            self.config.worm_tail_time = self.config.events[neighbor_site][index_worm]['time']
-
-            self.config.worm_tail_wpm = new_wpm
-
+            self.config.worm_tail_time = current_time
+            self.config.worm_tail_wpm = 0
 
         self.stats['insertkink_accepts'] += 1
-        self._log(f"[InsertKink] {'head' if move_head else 'tail'}; site {site} --> {neighbor_site}, time {current_time:.6f}")
         return True
 
     def delete_kink(self):
@@ -407,29 +418,40 @@ class WormAlgorithm:
         move_head = self.rng.random() < 0.5
 
         if move_head:
-            site =self.config.worm_head_site
+            site = self.config.worm_head_site
             current_time = self.config.worm_head_time
-            current_wpm  = self.config.worm_head_wpm
+            current_wpm = self.config.worm_head_wpm
             worm_type = TYPE_WORM_HEAD
         else:
             site = self.config.worm_tail_site
             current_time = self.config.worm_tail_time
-            current_wpm  = self.config.worm_tail_wpm
+            current_wpm = self.config.worm_tail_wpm
             worm_type = TYPE_WORM_TAIL
 
-        if current_wpm != 0:
-            return False
+        # Allow wpm = 0, ±1 for kink deletion
+        #if current_wpm != 0:
+        #    return False
 
+        # Find the hop event at current site
         hop_index = self._find_event_index(site, current_time, type_filter=TYPE_HOP)
         if hop_index is None:
-            return False
+            # Try with larger tolerance
+            hop_index = self._find_event_index(site, current_time,
+                                          eps=10*EPSILON, type_filter=TYPE_HOP)
+            if hop_index is None:
+                return False
 
         hop_event = self.config.events[site][hop_index]
         neighbor_site = hop_event['linked_site']
 
-        neighbor_hop_index = self._find_event_index(neighbor_site, current_time, type_filter=TYPE_HOP)
+        # Find the corresponding hop event at neighbor site
+        neighbor_hop_index = self._find_event_index(neighbor_site, current_time,
+                                               type_filter=TYPE_HOP)
         if neighbor_hop_index is None:
-            return False
+            neighbor_hop_index = self._find_event_index(neighbor_site, current_time,
+                                                   eps=10*EPSILON, type_filter=TYPE_HOP)
+            if neighbor_hop_index is None:
+                return False
 
         neighbor_hop_event = self.config.events[neighbor_site][neighbor_hop_index]
 
@@ -441,18 +463,26 @@ class WormAlgorithm:
         occ_B = neighbor_hop_event['occ_left']
         final_occ_B = neighbor_hop_event['occ_right']
 
-        if worm_type == TYPE_WORM_HEAD:
-            mat_A = math.sqrt(occ_A)
-            mat_B = math.sqrt(occ_B + 1)
+        # Calculate matrix elements based on the actual transition
+        if final_occ_A == occ_A - 1 and final_occ_B == occ_B + 1:
+            # This was a head-type transition: destroy at A, create at B
+            mat_A = math.sqrt(occ_A)  # b|n> = √n|n-1>
+            mat_B = math.sqrt(occ_B + 1)  # b†|n> = √(n+1)|n+1>
+        elif final_occ_A == occ_A + 1 and final_occ_B == occ_B - 1:
+            # This was a tail-type transition: create at A, destroy at B
+            mat_A = math.sqrt(occ_A + 1)  # b†|n> = √(n+1)|n+1>
+            mat_B = math.sqrt(occ_B)  # b|n> = √n|n-1>
         else:
-            mat_A = math.sqrt(occ_A + 1)
-            mat_B = math.sqrt(occ_B)
+            # Invalid transition
+            return False
 
         matrix_element_product = mat_A * mat_B
-        time_factor = self.hamiltonian.t* self.beta
+        time_factor = self.hamiltonian.t * self.beta
         neighbors = self.lattice.get_neighbors(site)
         z = len(neighbors)
-        proposal_ratio = 2.0 / float(z)
+
+        # Reverse of insert_kink proposal ratio
+        proposal_ratio = 1.0 / (2.0 * z)
 
         acceptance_ratio = proposal_ratio / (matrix_element_product * time_factor)
         acceptance_prob = min(1., acceptance_ratio)
@@ -460,38 +490,79 @@ class WormAlgorithm:
         if acceptance_prob < self.rng.random():
             return False
 
+        # Remove the hop events
         self.config.remove_element(site, hop_index)
         self.config.remove_element(neighbor_site, neighbor_hop_index)
-
-        worm_index = self._find_event_index(neighbor_site, current_time, type_filter=worm_type)
+        # Find and remove the worm event at current worm site
+        worm_index = self._find_event_index(site, current_time, type_filter=worm_type)
         if worm_index is None:
-            return False
+            worm_index = self._find_event_index(site, current_time,
+                                        eps=10*EPSILON, type_filter=worm_type)
+            if worm_index is None:
+                return False
+
+        self.config.remove_element(site, worm_index)
+
+        # ... remove hop events at site and neighbor_site ...
+
+        # Reinsert the worm at the ORIGINAL site (before kink insertion)
+        if worm_type == TYPE_WORM_HEAD:
+            # Worm was at current site, move back to original site
+            original_site = neighbor_site
+            index_worm = self.config.insert_element(
+                original_site, current_time,
+                TYPE_WORM_HEAD, final_occ_B, occ_B,
+                linked_site=original_site
+            )
+            self.config.worm_head_site = original_site
+            self.config.worm_head_time = current_time
+            self.config.worm_head_wpm = 0
+        else:  # TYPE_WORM_TAIL
+            original_site = neighbor_site
+            index_worm = self.config.insert_element(
+                original_site, current_time,
+                TYPE_WORM_TAIL, final_occ_B, occ_B,
+                linked_site=original_site
+            )
+            self.config.worm_tail_site = original_site
+            self.config.worm_tail_time = current_time
+            self.config.worm_tail_wpm = 0
+        """
+        # Find and remove the worm event at neighbor site
+        worm_index = self._find_event_index(neighbor_site, current_time,
+                                       type_filter=worm_type)
+        if worm_index is None:
+            worm_index = self._find_event_index(neighbor_site, current_time,
+                                           eps=10*EPSILON, type_filter=worm_type)
+            if worm_index is None:
+                return False
 
         self.config.remove_element(neighbor_site, worm_index)
 
-        original_site = neighbor_site if move_head else site
-        new_worm_time = current_time
-
+        # Reinsert the worm at the original site
+        # Determine which site gets the worm back based on worm type
         if worm_type == TYPE_WORM_HEAD:
-            index_worm = self.config.insert_element(original_site, new_worm_time,
-                                                    TYPE_WORM_HEAD, final_occ_B, occ_B,
-                                                    linked_site= original_site)
+            # Worm was at neighbor site, move back to original site
+            original_site = site
+            # Occupations: we go from final_occ_B back to occ_B
+            index_worm = self.config.insert_element(original_site, current_time,
+                                               TYPE_WORM_HEAD, final_occ_B, occ_B,
+                                               linked_site=original_site)
             self.config.worm_head_site = original_site
-            self.config.worm_head_time = new_worm_time
+            self.config.worm_head_time = current_time
             self.config.worm_head_wpm = 0
-
-        else:
-            index_worm = self.config.insert_element(original_site, new_worm_time,
-                                                    TYPE_WORM_TAIL, final_occ_B, occ_B,
-                                                    linked_site=original_site)
+        else:  # TYPE_WORM_TAIL
+            original_site = site
+            index_worm = self.config.insert_element(original_site, current_time,
+                                               TYPE_WORM_TAIL, final_occ_B, occ_B,
+                                               linked_site=original_site)
             self.config.worm_tail_site = original_site
-            self.config.worm_tail_time = new_worm_time
+            self.config.worm_tail_time = current_time
             self.config.worm_tail_wpm = 0
-
+        """
         self.stats['deletekink_accepts'] += 1
         self._log(f"[DeleteKink] {'head' if move_head else 'tail'}; site {neighbor_site} --> {original_site}, time {current_time:.6f}")
         return True
-
 
     def monte_carlo_sweep(self, updates_per_sweep = 100):
 
@@ -519,3 +590,4 @@ class WormAlgorithm:
             rates[key] = accepts / max(1, attempts)
 
         return rates
+
